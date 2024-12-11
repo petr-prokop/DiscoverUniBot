@@ -1,27 +1,23 @@
 from typing import Annotated, Dict
-
 from langchain_ollama import ChatOllama
 from typing_extensions import TypedDict
-
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_core.tools import tool
-from langchain.embeddings import OpenAIEmbeddings, HuggingFaceEmbeddings
+from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import TextLoader
-from langchain.vectorstores import Chroma
 import langchain
 import wikipedia
-
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, JsonOutputToolsParser
 from pathlib import Path
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import Chroma
+from langchain_chroma.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import TextLoader
+
 
 langchain.debug=False
 
@@ -78,7 +74,6 @@ class VectorStoreManager:
             embedding=self.embeddings,
             persist_directory=self.persist_directory
         )
-        vectorstore.persist()
         return vectorstore
 
     def similarity_search(self, query: str, k: int = 3):
