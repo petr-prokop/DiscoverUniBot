@@ -17,50 +17,88 @@ import wikipedia
 
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, JsonOutputToolsParser
+from pathlib import Path
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import TextLoader
 
 langchain.debug=False
 
-# Setup vector store and embeddings
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+class VectorStoreManager:
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 
-# Document processing
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,
-    chunk_overlap=50
-)
+    def __init__(self):
+        if not hasattr(self, '_initialized'):
+            self.persist_directory = "data/chroma_db"
+            self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+            self.vectorstore = self._load_or_create_vectorstore()
+            self._initialized = True
 
-# Load documents (adjust path as needed)
-loader = TextLoader("data/faq.html")
-documents = loader.load()
-# Split documents
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-splits = text_splitter.split_documents(documents)
+    def _load_or_create_vectorstore(self) -> Chroma:
+        """Load existing vectorstore or create new one if not exists"""
+        if self._database_exists():
+            print("Loading existing vector database...")
+            return Chroma(
+                persist_directory=self.persist_directory,
+                embedding_function=self.embeddings
+            )
+        else:
+            print("Creating new vector database...")
+            return self._create_new_vectorstore()
 
-# Create or load vector store
-vectorstore = Chroma.from_documents(
-    documents=splits,
-    embedding=embeddings,
-    persist_directory="data/chroma_db"
-)
+    def _database_exists(self) -> bool:
+        """Check if database exists at persistence directory"""
+        db_path = Path(self.persist_directory)
+        return db_path.exists() and len(list(db_path.glob('*'))) > 0
+
+    def _create_new_vectorstore(self) -> Chroma:
+        """Create new vectorstore from documents"""
+        # Ensure directory exists
+        Path(self.persist_directory).parent.mkdir(parents=True, exist_ok=True)
+        
+        # Load and process documents
+        loader = TextLoader("data/faq.html")
+        documents = loader.load()
+        
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=50
+        )
+        splits = text_splitter.split_documents(documents)
+        
+        # Create and persist vectorstore
+        vectorstore = Chroma.from_documents(
+            documents=splits,
+            embedding=self.embeddings,
+            persist_directory=self.persist_directory
+        )
+        vectorstore.persist()
+        return vectorstore
+
+    def similarity_search(self, query: str, k: int = 3):
+        """Perform similarity search"""
+        return self.vectorstore.similarity_search(query=query, k=k)
 
 @tool
 def get_study_info(question: str) -> str:
     """Search FAQ database for relevant information."""
-    # Get top 3 most similar documents
-    docs = vectorstore.similarity_search(
-        query=question,
-        k=3
-    )
+    vector_manager = VectorStoreManager()
+    docs = vector_manager.similarity_search(question)
     
-    # Format results
     results = []
     for i, doc in enumerate(docs, 1):
         results.append(f"Result {i}:\n{doc.page_content}")
     
-    # Return concatenated results or empty message
-    if results:
-        return "\n\n".join(results)
-    return "No relevant information found in the FAQ database."
+    return "\n\n".join(results) if results else "No relevant information found."
+
+# Replace original vector store initialization with single line
+vector_manager = VectorStoreManager()
 
 @tool
 def get_wikipedia_content(search_query: str):
